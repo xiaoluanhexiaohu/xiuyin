@@ -1,20 +1,37 @@
-"""FastAPI application for local-path offline audio correction MVP."""
+"""FastAPI application for the Chinese upload-style one-click correction MVP."""
 
 from __future__ import annotations
 
-from dataclasses import asdict
+import uuid
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-from app.schemas import AlignRequest, AnalyzeRequest, CorrectRequest, ExportJobRequest
-from core.aligner import align_features
-from core.audio_io import load_audio
-from core.correction_planner import create_correction_plan
-from core.feature_extractor import extract_features
-from core.pitch_tracker import analyze_array
-from jobs.batch_export import run_job
+from app.auth import TOKEN_EXPIRE_SECONDS, create_access_token, get_current_user
+from app.schemas import JobStatusResponse, ResultResponse, TokenResponse, UploadResponse
+from app.users import User, hash_user_sub, verify_password
+from jobs.paths import create_job_layout, write_job_index
+from jobs.queue import enqueue_web_job
+from jobs.status import initial_status, is_expired, load_job_for_user, mark_failed, write_status
 
-app = FastAPI(title="Auto Tune MVP", version="0.1.0")
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+SUPPORTED_UPLOAD_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac"}
+
+app = FastAPI(title="修音 Web 系统", version="0.2.0")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+ALLOWED_ARTIFACTS = {
+    "bundle.zip": "application/zip",
+    "corrected_vocal.wav": "audio/wav",
+    "mix.wav": "audio/wav",
+    "report.json": "application/json",
+}
 
 
 @app.get("/health")
@@ -24,114 +41,166 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/analyze/reference")
-def analyze_reference(request: AnalyzeRequest) -> dict:
-    """Analyze a reference audio path."""
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    """Return the minimal Chinese upload page."""
 
-    return _analyze(request.audio_path)
-
-
-@app.post("/analyze/user")
-def analyze_user(request: AnalyzeRequest) -> dict:
-    """Analyze a user audio path."""
-
-    return _analyze(request.audio_path)
+    return templates.TemplateResponse("simple_upload.html", {"request": request})
 
 
-@app.post("/align")
-def align(request: AlignRequest) -> dict:
-    """Align local reference and user audio paths."""
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    """Return the Chinese login page."""
 
-    try:
-        alignment = _alignment_for_paths(request.reference_audio, request.user_audio)
-        return {
-            "confidence": alignment.confidence,
-            "distance": alignment.distance,
-            "low_confidence_segments": [asdict(s) for s in alignment.low_confidence_segments],
-            "warnings": alignment.warnings,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
-@app.post("/correct")
-def correct(request: CorrectRequest) -> dict:
-    """Create and return a correction-plan summary for two local audio paths."""
+@app.post("/auth/token", response_model=TokenResponse)
+def token(form: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenResponse:
+    """OAuth2 password-flow login endpoint."""
 
-    try:
-        ref_audio = load_audio(request.reference_audio, normalize=True)
-        user_audio = load_audio(request.user_audio, target_sr=ref_audio.sr, normalize=True)
-        ref_pitch = analyze_array(ref_audio.y, ref_audio.sr)
-        user_pitch = analyze_array(user_audio.y, user_audio.sr)
-        alignment = _alignment_for_arrays(ref_audio.y, user_audio.y, ref_audio.sr, user_pitch.hop_length)
-        plan = create_correction_plan(
-            user_pitch,
-            ref_pitch,
-            alignment,
-            request.params.correction_strength,
-            request.params.keep_vibrato_ratio,
-            request.params.max_shift_cents,
+    if not verify_password(form.username, form.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误。",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        return {
-            "correction_strength": plan.correction_strength,
-            "keep_vibrato_ratio": plan.keep_vibrato_ratio,
-            "max_shift_cents": plan.max_shift_cents,
-            "low_confidence_frame_count": len(plan.low_confidence_frames),
-            "warnings": plan.warnings,
-            "preview": {
-                "times": plan.times[:20],
-                "target_f0_hz": plan.target_f0_hz[:20],
-                "shift_cents": plan.shift_cents[:20],
-            },
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TokenResponse(
+        access_token=create_access_token(form.username, TOKEN_EXPIRE_SECONDS),
+        token_type="bearer",
+        expires_in=TOKEN_EXPIRE_SECONDS,
+    )
 
 
-@app.post("/export")
-def export(request: ExportJobRequest) -> dict:
-    """Run a full offline export job using local paths."""
+@app.post("/upload", response_model=UploadResponse)
+def upload(
+    current_user: Annotated[User, Depends(get_current_user)],
+    reference_audio: Annotated[UploadFile, File(description="原唱音频")],
+    user_audio: Annotated[UploadFile, File(description="我的录音")],
+    correction_strength: Annotated[float, Form()] = 0.75,
+    keep_vibrato_ratio: Annotated[float, Form()] = 0.6,
+    max_shift_cents: Annotated[float, Form()] = 300.0,
+    auto_separate_reference: Annotated[bool, Form()] = True,
+    syllable_granularity: Annotated[str, Form()] = "conservative",
+    output_format: Annotated[str, Form()] = "wav",
+) -> UploadResponse:
+    """Save uploaded audio files, create a job, enqueue processing, and return immediately."""
 
+    _validate_upload_name(reference_audio.filename)
+    _validate_upload_name(user_audio.filename)
+    if syllable_granularity not in {"conservative", "normal", "aggressive"}:
+        raise HTTPException(status_code=400, detail="音节分段粒度只能是 conservative、normal 或 aggressive。")
+    if output_format != "wav":
+        raise HTTPException(status_code=400, detail="当前 MVP 仅支持 wav 输出。")
+    job_id = uuid.uuid4().hex
+    user_hash = hash_user_sub(current_user.sub)
+    root = create_job_layout(user_hash, job_id)
+    options = {
+        "correction_strength": float(correction_strength),
+        "keep_vibrato_ratio": float(keep_vibrato_ratio),
+        "max_shift_cents": float(max_shift_cents),
+        "auto_separate_reference": bool(auto_separate_reference),
+        "syllable_granularity": syllable_granularity,
+        "output_format": output_format,
+    }
+    write_status(root, initial_status(job_id, current_user.sub, options))
+    write_job_index(job_id, user_hash)
+    ref_suffix = Path(reference_audio.filename or "").suffix.lower()
+    user_suffix = Path(user_audio.filename or "").suffix.lower()
     try:
-        return run_job(
-            {
-                "id": request.id,
-                "reference_audio": request.reference_audio,
-                "user_audio": request.user_audio,
-                "accompaniment_audio": request.accompaniment_audio,
-                "output_dir": request.output_dir,
-                "params": request.params.model_dump() if hasattr(request.params, "model_dump") else request.params.dict(),
-            }
-        )
+        _save_upload(reference_audio, root / "inputs" / f"reference_audio.original{ref_suffix}")
+        _save_upload(user_audio, root / "inputs" / f"user_audio.original{user_suffix}")
+        enqueue_web_job(user_hash, job_id)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        mark_failed(root, "排队失败", str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return UploadResponse(
+        job_id=job_id,
+        status="queued",
+        status_url=f"/status/{job_id}",
+        result_url=f"/result/{job_id}",
+    )
 
 
-def _analyze(path: str) -> dict:
-    try:
-        audio = load_audio(path, normalize=True)
-        pitch = analyze_array(audio.y, audio.sr)
-        voiced = sum(1 for flag in pitch.voiced_flag if flag)
-        return {
-            "path": path,
-            "sample_rate": audio.sr,
-            "duration": audio.duration,
-            "pitch_method": pitch.method,
-            "frame_count": len(pitch.times),
-            "voiced_frame_count": voiced,
-            "preview": pitch.to_dict() | {"times": pitch.times[:20], "f0_hz": pitch.f0_hz[:20]},
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+@app.get("/status/{job_id}", response_model=JobStatusResponse)
+def job_status(job_id: str, current_user: Annotated[User, Depends(get_current_user)]) -> JobStatusResponse:
+    """Return Chinese job progress for the owner."""
+
+    _, status_doc = load_job_for_user(job_id, current_user.sub)
+    return JobStatusResponse(
+        job_id=job_id,
+        status=status_doc["status"],
+        stage=status_doc.get("stage", "upload"),
+        progress=float(status_doc.get("progress", 0.0)),
+        message=status_doc.get("message", ""),
+        warnings=status_doc.get("warnings", []),
+    )
 
 
-def _alignment_for_paths(reference_audio: str, user_audio: str):
-    ref_audio = load_audio(reference_audio, normalize=True)
-    usr_audio = load_audio(user_audio, target_sr=ref_audio.sr, normalize=True)
-    return _alignment_for_arrays(ref_audio.y, usr_audio.y, ref_audio.sr, 512)
+@app.get("/result/{job_id}", response_model=ResultResponse)
+def result(job_id: str, current_user: Annotated[User, Depends(get_current_user)]) -> ResultResponse:
+    """Return completed artifact URLs for the owner."""
+
+    root, status_doc = load_job_for_user(job_id, current_user.sub)
+    if status_doc.get("status") == "expired" or is_expired(status_doc):
+        raise HTTPException(status_code=410, detail="下载链接已过期，请重新提交任务。")
+    if status_doc.get("status") != "completed":
+        raise HTTPException(status_code=409, detail=status_doc.get("message", "任务尚未完成。"))
+    if not (root / "artifacts" / "bundle.zip").exists():
+        raise HTTPException(status_code=404, detail="结果文件不存在。")
+    return ResultResponse(
+        job_id=job_id,
+        status="completed",
+        completed_at=str(status_doc.get("completed_at")),
+        expires_at=str(status_doc.get("expires_at")),
+        bundle_url=f"/download/{job_id}/bundle.zip",
+        artifacts={
+            "corrected_vocal": f"/download/{job_id}/corrected_vocal.wav",
+            "mix": f"/download/{job_id}/mix.wav",
+            "report": f"/download/{job_id}/report.json",
+        },
+        actual_pitch_shift_applied=bool(status_doc.get("actual_pitch_shift_applied", False)),
+        warnings=status_doc.get("warnings", []),
+    )
 
 
-def _alignment_for_arrays(ref_y, user_y, sr: int, hop_length: int):
-    ref_features = extract_features(ref_y, sr, hop_length=hop_length)
-    user_features = extract_features(user_y, sr, hop_length=hop_length)
-    return align_features(ref_features, user_features)
+@app.get("/download/{job_id}/{artifact}")
+def download(job_id: str, artifact: str, current_user: Annotated[User, Depends(get_current_user)]):
+    """Download a whitelisted artifact for a completed, non-expired owned job."""
+
+    if artifact not in ALLOWED_ARTIFACTS:
+        raise HTTPException(status_code=404, detail="文件不存在。")
+    root, status_doc = load_job_for_user(job_id, current_user.sub)
+    if status_doc.get("status") == "expired" or is_expired(status_doc):
+        raise HTTPException(status_code=410, detail="下载链接已过期，请重新提交任务。")
+    if status_doc.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="任务尚未完成。")
+    path = root / "artifacts" / artifact
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在。")
+    return FileResponse(path, media_type=ALLOWED_ARTIFACTS[artifact], filename=artifact)
+
+
+def _validate_upload_name(filename: str | None) -> None:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="仅支持 wav、mp3、m4a、flac 格式。")
+
+
+def _save_upload(upload: UploadFile, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with destination.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                out.close()
+                destination.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="单个音频文件不能超过 100MB。")
+            out.write(chunk)
+    upload.file.seek(0)

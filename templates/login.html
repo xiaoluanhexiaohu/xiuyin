@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录修音系统</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="card narrow">
+    <h1>登录修音系统</h1>
+    <form id="loginForm">
+      <label>用户名<input id="username" name="username" autocomplete="username" required /></label>
+      <label>密码<input id="password" name="password" type="password" autocomplete="current-password" required /></label>
+      <button type="submit">登录</button>
+      <p id="loginError" class="error" role="alert"></p>
+    </form>
+  </main>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const body = new URLSearchParams();
+      body.set('username', document.getElementById('username').value);
+      body.set('password', document.getElementById('password').value);
+      const error = document.getElementById('loginError');
+      error.textContent = '';
+      try {
+        const response = await fetch('/auth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        if (!response.ok) {
+          error.textContent = '用户名或密码错误';
+          return;
+        }
+        const data = await response.json();
+        localStorage.setItem('xiuyin_token', data.access_token);
+        window.location.href = '/';
+      } catch (err) {
+        error.textContent = '服务器连接失败，请稍后重试';
+      }
+    });
+  </script>
+</body>
+</html>
