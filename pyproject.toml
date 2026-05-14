@@ -1,0 +1,28 @@
+[project]
+name = "auto-tune-mvp"
+version = "0.1.0"
+description = "Offline one-click singing pitch correction MVP"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "numpy",
+  "scipy",
+  "librosa",
+  "soundfile",
+  "pydantic",
+  "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff"]
+f0 = ["torch", "torchcrepe"]
+render = ["pyrubberband"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
