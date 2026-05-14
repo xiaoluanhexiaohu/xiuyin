@@ -1,13 +1,21 @@
-"""Audio loading, normalization, and WAV export utilities for the offline MVP."""
+"""Audio loading, normalization, upload validation, and WAV export utilities."""
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import librosa
 import numpy as np
 import soundfile as sf
+
+SUPPORTED_UPLOAD_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac"}
+COMPRESSED_EXTENSIONS = {".mp3", ".m4a"}
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+MAX_UPLOAD_DURATION_SECONDS = 600.0
 
 
 @dataclass
@@ -90,3 +98,96 @@ def audio_info(path: str | Path) -> dict:
         "format": info.format,
         "subtype": info.subtype,
     }
+
+
+def is_ffmpeg_available() -> bool:
+    """Return whether ffmpeg and ffprobe are available on PATH."""
+
+    return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+
+
+def probe_audio_duration(path: str | Path) -> float:
+    """Probe audio duration in seconds using soundfile first, then ffprobe."""
+
+    audio_path = Path(path)
+    if not audio_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+    if audio_path.suffix.lower() not in COMPRESSED_EXTENSIONS:
+        info = sf.info(str(audio_path))
+        return float(info.duration)
+    if not is_ffmpeg_available():
+        raise RuntimeError("服务器未安装 ffmpeg，无法处理 mp3/m4a，请上传 wav 或联系管理员。")
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(audio_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    return float(payload["format"]["duration"])
+
+
+def validate_audio_limits(
+    path: str | Path,
+    max_bytes: int = MAX_UPLOAD_BYTES,
+    max_duration_seconds: float = MAX_UPLOAD_DURATION_SECONDS,
+) -> None:
+    """Validate upload extension, size, and duration with Chinese user errors."""
+
+    audio_path = Path(path)
+    suffix = audio_path.suffix.lower()
+    if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
+        raise ValueError("仅支持 wav、mp3、m4a、flac 格式。")
+    if audio_path.stat().st_size > max_bytes:
+        raise ValueError("单个音频文件不能超过 100MB。")
+    duration = probe_audio_duration(audio_path)
+    if duration > max_duration_seconds:
+        raise ValueError("音频时长不能超过 10 分钟。")
+
+
+def normalize_uploaded_audio(
+    input_path: str | Path,
+    output_wav_path: str | Path,
+    target_sr: int = 44100,
+) -> AudioWriteResult:
+    """Normalize an uploaded audio file into a mono working WAV."""
+
+    src = Path(input_path)
+    dst = Path(output_wav_path)
+    validate_audio_limits(src)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    suffix = src.suffix.lower()
+    if suffix in COMPRESSED_EXTENSIONS:
+        if not is_ffmpeg_available():
+            raise RuntimeError("服务器未安装 ffmpeg，无法处理 mp3/m4a，请上传 wav 或联系管理员。")
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(src),
+                "-ac",
+                "1",
+                "-ar",
+                str(target_sr),
+                "-sample_fmt",
+                "s16",
+                str(dst),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        audio = load_audio(dst, target_sr=target_sr, normalize=True)
+        return write_wav(dst, audio.y, audio.sr, normalize=False)
+    audio = load_audio(src, target_sr=target_sr, mono=True, normalize=True)
+    return write_wav(dst, audio.y, audio.sr, normalize=False)

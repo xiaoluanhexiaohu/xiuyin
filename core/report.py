@@ -68,6 +68,82 @@ def build_report(
     }
 
 
+def build_web_report(
+    *,
+    job_id: str,
+    user: str,
+    reference_audio_name: str,
+    user_audio_name: str,
+    reference_was_separated: bool,
+    alignment_result: Any,
+    correction_plan: CorrectionPlan,
+    segments: list[Any],
+    syllable_granularity: str,
+    render_result: Any,
+    mix_result: Any,
+    warnings: list[str],
+    created_at: str,
+    completed_at: str,
+    expires_at: str,
+) -> dict[str, Any]:
+    """Build the Chinese upload-web MVP report structure."""
+
+    low_segments = [_asdict(s) for s in getattr(alignment_result, "low_confidence_segments", [])]
+    render_warning = getattr(render_result, "warning", None)
+    all_warnings = []
+    for source in [
+        warnings,
+        getattr(alignment_result, "warnings", []),
+        correction_plan.warnings,
+        getattr(render_result, "warnings", []),
+        getattr(mix_result, "warnings", []),
+    ]:
+        all_warnings.extend(str(w) for w in source if w)
+    return {
+        "job_id": job_id,
+        "user": user,
+        "input": {
+            "reference_audio": reference_audio_name,
+            "user_audio": user_audio_name,
+            "reference_was_separated": bool(reference_was_separated),
+            "partial_match": bool(getattr(alignment_result, "partial_match", False)),
+        },
+        "limits": {"max_file_size_mb": 100, "max_duration_seconds": 600},
+        "alignment": {
+            "partial_match": bool(getattr(alignment_result, "partial_match", False)),
+            "matched_reference_start_time": float(getattr(alignment_result, "matched_reference_start_time", 0.0)),
+            "matched_reference_end_time": float(getattr(alignment_result, "matched_reference_end_time", 0.0)),
+            "alignment_confidence": float(getattr(alignment_result, "confidence", 0.0)),
+            "low_confidence_segments": low_segments,
+        },
+        "correction": {
+            "mode": "syllable_approx",
+            "syllable_granularity": syllable_granularity,
+            "correction_strength": correction_plan.correction_strength,
+            "keep_vibrato_ratio": correction_plan.keep_vibrato_ratio,
+            "max_shift_cents": correction_plan.max_shift_cents,
+            "segment_count": len(segments),
+            "skipped_segment_count": sum(1 for s in segments if getattr(s, "skipped", False)),
+        },
+        "render": {
+            "actual_pitch_shift_applied": bool(getattr(render_result, "actual_pitch_shift_applied", False)),
+            "render_backend": getattr(render_result, "renderer", "placeholder"),
+            "warning": render_warning,
+        },
+        "mix": {"mix_mode": getattr(mix_result, "mix_mode", "vocal_only")},
+        "outputs": {
+            "corrected_vocal": "corrected_vocal.wav",
+            "mix": "mix.wav",
+            "report": "report.json",
+            "bundle": "bundle.zip",
+        },
+        "warnings": sorted(set(all_warnings)),
+        "created_at": created_at,
+        "completed_at": completed_at,
+        "expires_at": expires_at,
+    }
+
+
 def write_report(report: dict[str, Any], output_path: str | Path) -> Path:
     """Write a report dictionary to JSON."""
 

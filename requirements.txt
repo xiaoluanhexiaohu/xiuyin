@@ -6,6 +6,10 @@ librosa
 soundfile
 pydantic
 python-multipart
+jinja2
+redis
+rq
+httpx
 pytest
 pytest-cov
 ruff

@@ -12,10 +12,13 @@ dependencies = [
   "soundfile",
   "pydantic",
   "python-multipart",
+  "jinja2",
+  "redis",
+  "rq",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff"]
+dev = ["pytest", "pytest-cov", "ruff", "httpx"]
 f0 = ["torch", "torchcrepe"]
 render = ["pyrubberband"]
 

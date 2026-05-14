@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>一键修音</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>一键修音</h1>
+    <p class="hint">上传原唱和你的录音，系统会自动分析并修音，完成后自动下载结果压缩包。</p>
+    <form id="uploadForm">
+      <label>原唱音频<input type="file" name="reference_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
+      <label>我的录音<input type="file" name="user_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
+      <details>
+        <summary>高级设置</summary>
+        <label>修音强度<input name="correction_strength" type="number" min="0" max="1" step="0.05" value="0.75" /></label>
+        <label>保留颤音比例<input name="keep_vibrato_ratio" type="number" min="0" max="1" step="0.05" value="0.6" /></label>
+        <label>最大修正幅度<input name="max_shift_cents" type="number" min="1" step="10" value="300" /></label>
+        <label>音节分段粒度
+          <select name="syllable_granularity">
+            <option value="conservative" selected>保守</option>
+            <option value="normal">标准</option>
+            <option value="aggressive">细致（可能产生不自然效果）</option>
+          </select>
+        </label>
+      </details>
+      <button id="startButton" type="submit">开始修音</button>
+    </form>
+    <section class="status-panel">
+      <p id="statusText">等待上传</p>
+      <progress id="progress" value="0" max="1"></progress>
+      <p id="warningText" class="warning"></p>
+      <div id="downloadLinks" class="links" hidden></div>
+    </section>
+  </main>
+  <script src="/static/simple_upload.js"></script>
+</body>
+</html>

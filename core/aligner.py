@@ -30,6 +30,9 @@ class AlignmentResult:
     low_confidence_segments: list[TimeSegment]
     distance: float
     warnings: list[str]
+    partial_match: bool = False
+    matched_reference_start_time: float = 0.0
+    matched_reference_end_time: float = 0.0
 
 
 def align_features(reference_features: AudioFeatures, user_features: AudioFeatures) -> AlignmentResult:
@@ -98,3 +101,69 @@ def _frames_to_segments(mask: np.ndarray, times: list[float], reason: str, confi
             segments.append(TimeSegment(float(start_time), float(end_time), reason, float(confidence)))
             start = None
     return segments
+
+
+def detect_best_reference_window(
+    reference_features: AudioFeatures,
+    user_features: AudioFeatures,
+    min_confidence: float = 0.35,
+) -> tuple[int, int, float, list[str]]:
+    """Detect the best reference frame window for a shorter user recording."""
+
+    ref = np.asarray(reference_features.feature_matrix, dtype=np.float32)
+    usr = np.asarray(user_features.feature_matrix, dtype=np.float32)
+    warnings: list[str] = []
+    if ref.shape[1] <= usr.shape[1] or usr.shape[1] == 0:
+        return 0, ref.shape[1], 1.0, warnings
+    user_summary = np.mean(usr, axis=1)
+    user_norm = float(np.linalg.norm(user_summary)) or 1.0
+    win = usr.shape[1]
+    step = max(1, win // 8)
+    best_start = 0
+    best_score = -1.0
+    for start in range(0, ref.shape[1] - win + 1, step):
+        ref_summary = np.mean(ref[:, start : start + win], axis=1)
+        denom = (float(np.linalg.norm(ref_summary)) or 1.0) * user_norm
+        score = float(np.dot(ref_summary, user_summary) / denom)
+        if score > best_score:
+            best_start = start
+            best_score = score
+    confidence = float(np.clip((best_score + 1.0) / 2.0, 0.0, 1.0))
+    if confidence < min_confidence:
+        warnings.append("未能可靠匹配原唱片段，本次仅生成基础修音计划。")
+        return 0, ref.shape[1], confidence, warnings
+    return best_start, min(best_start + win, ref.shape[1]), confidence, warnings
+
+
+def align_partial_features(reference_features: AudioFeatures, user_features: AudioFeatures) -> AlignmentResult:
+    """Align user features, using a local reference window when the user audio is shorter."""
+
+    ref_frames = reference_features.feature_matrix.shape[1]
+    user_frames = user_features.feature_matrix.shape[1]
+    if ref_frames > user_frames * 1.25 and user_frames > 0:
+        start, end, window_confidence, warnings = detect_best_reference_window(reference_features, user_features)
+        sliced = AudioFeatures(
+            times=reference_features.times[start:end],
+            chroma=reference_features.chroma[:, start:end],
+            onset_strength=reference_features.onset_strength[start:end],
+            rms=reference_features.rms[start:end],
+            feature_matrix=reference_features.feature_matrix[:, start:end],
+            sr=reference_features.sr,
+            hop_length=reference_features.hop_length,
+        )
+        result = align_features(sliced, user_features)
+        result.user_to_reference_map = [None if v is None else int(v + start) for v in result.user_to_reference_map]
+        result.alignment_path = [(int(r + start), int(u)) for r, u in result.alignment_path]
+        result.partial_match = True
+        result.matched_reference_start_time = reference_features.times[start] if start < len(reference_features.times) else 0.0
+        result.matched_reference_end_time = reference_features.times[end - 1] if end - 1 < len(reference_features.times) else result.matched_reference_start_time
+        result.confidence = float(min(result.confidence, max(window_confidence, 0.0)))
+        result.warnings.extend(warnings)
+        if result.confidence < 0.35 and "未能可靠匹配原唱片段，本次仅生成基础修音计划。" not in result.warnings:
+            result.warnings.append("未能可靠匹配原唱片段，本次仅生成基础修音计划。")
+        return result
+    result = align_features(reference_features, user_features)
+    result.partial_match = False
+    result.matched_reference_start_time = 0.0
+    result.matched_reference_end_time = reference_features.times[-1] if reference_features.times else 0.0
+    return result
