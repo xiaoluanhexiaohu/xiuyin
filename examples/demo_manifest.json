@@ -1,0 +1,16 @@
+{
+  "jobs": [
+    {
+      "id": "demo_song_001",
+      "reference_audio": "data/reference.wav",
+      "user_audio": "data/user.wav",
+      "accompaniment_audio": "data/accompaniment.wav",
+      "output_dir": "outputs/demo_song_001",
+      "params": {
+        "correction_strength": 0.75,
+        "keep_vibrato_ratio": 0.6,
+        "max_shift_cents": 300
+      }
+    }
+  ]
+}

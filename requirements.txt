@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+numpy
+scipy
+librosa
+soundfile
+pydantic
+python-multipart
+pytest
+pytest-cov
+ruff
