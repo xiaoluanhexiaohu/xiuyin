@@ -12,7 +12,18 @@
     <p class="hint">上传原唱和你的录音，系统会自动分析并修音，完成后自动下载结果压缩包。</p>
     <form id="uploadForm">
       <label>原唱音频<input type="file" name="reference_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
-      <label>我的录音<input type="file" name="user_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
+      <label>我的录音<input id="userAudioInput" type="file" name="user_audio" accept=".wav,.mp3,.m4a,.flac,.webm,.mp4,audio/*" required /></label>
+      <section id="recorderPanel" class="recorder-panel" aria-label="浏览器录音面板">
+        <h2>直接录音</h2>
+        <p class="hint">可使用浏览器麦克风录制我的录音，优先 webm/opus，单次最多 10 分钟或 20MB。</p>
+        <div class="recorder-actions">
+          <button id="recordStart" type="button">开始录音</button>
+          <button id="recordStop" type="button" disabled>停止录音</button>
+          <button id="recordReset" type="button" disabled>重录</button>
+        </div>
+        <audio id="recordPreview" controls hidden></audio>
+        <p id="recordStatus" class="hint">未开始录音</p>
+      </section>
       <details>
         <summary>高级设置</summary>
         <label>修音强度<input name="correction_strength" type="number" min="0" max="1" step="0.05" value="0.75" /></label>

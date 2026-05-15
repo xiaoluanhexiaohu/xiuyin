@@ -12,8 +12,8 @@ import librosa
 import numpy as np
 import soundfile as sf
 
-SUPPORTED_UPLOAD_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac"}
-COMPRESSED_EXTENSIONS = {".mp3", ".m4a"}
+SUPPORTED_UPLOAD_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".webm", ".mp4"}
+COMPRESSED_EXTENSIONS = {".mp3", ".m4a", ".webm", ".mp4"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 MAX_UPLOAD_DURATION_SECONDS = 600.0
 
@@ -146,7 +146,7 @@ def validate_audio_limits(
     audio_path = Path(path)
     suffix = audio_path.suffix.lower()
     if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
-        raise ValueError("仅支持 wav、mp3、m4a、flac 格式。")
+        raise ValueError("仅支持 wav、mp3、m4a、flac、webm、mp4 格式。")
     if audio_path.stat().st_size > max_bytes:
         raise ValueError("单个音频文件不能超过 100MB。")
     duration = probe_audio_duration(audio_path)

@@ -15,6 +15,9 @@ from fastapi.templating import Jinja2Templates
 from app.auth import TOKEN_EXPIRE_SECONDS, create_access_token, get_current_user
 from app.schemas import JobStatusResponse, ResultResponse, TokenResponse, UploadResponse
 from app.users import User, hash_user_sub, verify_password
+from app.routers.audio import router as audio_router
+from app.routers.pitch_jobs import router as pitch_jobs_router
+from app.routers.reference import router as reference_router
 from jobs.paths import create_job_layout, write_job_index
 from jobs.queue import enqueue_web_job
 from jobs.status import initial_status, is_expired, load_job_for_user, mark_failed, write_status
@@ -25,6 +28,9 @@ SUPPORTED_UPLOAD_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac"}
 app = FastAPI(title="修音 Web 系统", version="0.2.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+app.include_router(audio_router)
+app.include_router(reference_router)
+app.include_router(pitch_jobs_router)
 
 ALLOWED_ARTIFACTS = {
     "bundle.zip": "application/zip",
