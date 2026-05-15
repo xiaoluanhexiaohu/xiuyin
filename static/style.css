@@ -22,3 +22,22 @@ progress { width: 100%; height: 14px; }
 .recorder-panel h2 { margin: 0; font-size: 20px; }
 .recorder-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .recorder-panel audio { width: 100%; }
+.reference-search-panel { border: 1px solid #e5e8f0; border-radius: 18px; padding: 18px; background: #fbfdff; display: grid; gap: 12px; }
+.reference-search-panel h2 { margin: 0; font-size: 22px; }
+.reference-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 12px; align-items: end; }
+.reference-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.reference-result-card { border: 1px solid #e5e8f0; border-radius: 16px; padding: 14px; background: #fff; display: grid; gap: 10px; }
+.reference-result-card h3 { margin: 0; font-size: 18px; }
+.reference-meta { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 10px; margin: 0; color: #334155; }
+.reference-meta dt { font-weight: 800; color: #64748b; }
+.reference-meta dd { margin: 0; overflow-wrap: anywhere; }
+.reference-result-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.button-link { border-radius: 999px; padding: 12px 18px; background: #2563eb; color: #fff; font-weight: 800; text-decoration: none; }
+.button-link.secondary, .secondary-button { background: #e8eefc; color: #1d4ed8; }
+.secondary-button { padding: 10px 16px; }
+.external-link { color: #2563eb; font-weight: 800; }
+.selected-reference { border: 1px solid #bfdbfe; border-radius: 16px; background: #eff6ff; padding: 14px; display: grid; gap: 8px; }
+.selected-reference p { margin: 0; }
+@media (max-width: 720px) {
+  .reference-search-controls { grid-template-columns: 1fr; }
+}
