@@ -1,6 +1,16 @@
 """Reference provider registry."""
 
-from services.reference_providers.base import ImportNotAllowedError, ImportedTrack, ReferenceSearchResult
+from services.reference_providers.base import (
+    AudioNormalizeError,
+    ConfigMissingError,
+    ImportedReferenceAudio,
+    ImportNotAllowedError,
+    ReferenceAudioUnauthorizedError,
+    ReferenceDownloadError,
+    ReferenceProviderError,
+    ReferenceSearchError,
+    ReferenceSearchItem,
+)
 from services.reference_providers.freesound import FreesoundProvider
 from services.reference_providers.jamendo import JamendoProvider
 from services.reference_providers.spotify import SpotifyProvider
@@ -13,4 +23,15 @@ PROVIDERS = {
     "youtube": YouTubeProvider,
 }
 
-__all__ = ["PROVIDERS", "ImportNotAllowedError", "ImportedTrack", "ReferenceSearchResult"]
+__all__ = [
+    "PROVIDERS",
+    "AudioNormalizeError",
+    "ConfigMissingError",
+    "ImportedReferenceAudio",
+    "ImportNotAllowedError",
+    "ReferenceAudioUnauthorizedError",
+    "ReferenceDownloadError",
+    "ReferenceProviderError",
+    "ReferenceSearchError",
+    "ReferenceSearchItem",
+]
