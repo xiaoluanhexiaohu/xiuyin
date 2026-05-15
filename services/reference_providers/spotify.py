@@ -24,7 +24,7 @@ class SpotifyProvider(ReferenceProvider):
         client_id = os.getenv("SPOTIFY_CLIENT_ID")
         client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
         if not client_id or not client_secret:
-            raise ConfigMissingError("Spotify API 未配置，请在 .env 中配置 SPOTIFY_CLIENT_ID 和 SPOTIFY_CLIENT_SECRET")
+            raise ConfigMissingError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are required.")
         return client_id, client_secret
 
     async def _access_token(self) -> str:

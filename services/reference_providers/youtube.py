@@ -21,7 +21,7 @@ class YouTubeProvider(ReferenceProvider):
     def _api_key(self) -> str:
         api_key = os.getenv("YOUTUBE_API_KEY")
         if not api_key:
-            raise ConfigMissingError("YouTube API 未配置，请在 .env 中配置 YOUTUBE_API_KEY")
+            raise ConfigMissingError("YOUTUBE_API_KEY is required.")
         return api_key
 
     async def search(self, query: str, page: int = 1, page_size: int = 10) -> list[ReferenceSearchItem]:

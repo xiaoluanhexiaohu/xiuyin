@@ -68,12 +68,12 @@ async function searchReferenceMusic() {
   try {
     const response = await fetch('/api/v1/reference/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ source, query, page: 1, page_size: 10 })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(readApiError(data, '搜索失败', response.status));
+      throw new Error(readApiError(data, '搜索失败'));
     }
     const items = data.items || data.results || [];
     renderReferenceResults(items);
@@ -181,7 +181,7 @@ async function importReferenceMusic(item, button) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(readApiError(data, '导入失败', response.status));
+      throw new Error(readApiError(data, '导入失败'));
     }
     selectedReferenceAudio = {
       audio_id: data.audio_id,
@@ -353,7 +353,7 @@ async function submitLegacyUploadJob() {
   const response = await fetch('/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(readApiError(data, '上传失败', response.status));
+    throw new Error(readApiError(data, '上传失败'));
   }
   const data = await response.json();
   statusText.textContent = '排队中';
@@ -384,7 +384,7 @@ async function submitImportedReferenceJob() {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(readApiError(data, '创建修音任务失败', response.status));
+    throw new Error(readApiError(data, '创建修音任务失败'));
   }
   statusText.textContent = data.message || '修音任务已创建';
   handlePitchJobStatus(data.job_id, data);
@@ -399,7 +399,7 @@ async function uploadUserAudioForPitchJob(file) {
   const response = await fetch('/api/v1/audio/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(readApiError(data, '上传我的录音失败', response.status));
+    throw new Error(readApiError(data, '上传我的录音失败'));
   }
   return data;
 }
@@ -527,24 +527,14 @@ function showWarnings(warnings) {
   }
 }
 
-function readApiError(data, fallback, statusCode = 0) {
-  if (statusCode === 401 || statusCode === 403) {
-    return '登录已失效，请重新登录';
-  }
-  const payload = data && data.detail && typeof data.detail === 'object' ? data.detail : data;
-  if (payload && payload.error_code === 'CONFIG_MISSING') {
-    return '第三方音乐 API 未配置，请检查 .env 配置';
-  }
-  if (payload && payload.error_code === 'REFERENCE_SEARCH_FAILED') {
-    return '音乐搜索失败，请稍后重试';
-  }
-  if (payload && payload.message) {
-    return payload.message;
-  }
+function readApiError(data, fallback) {
   if (typeof data.detail === 'string') {
     return data.detail;
   }
-  return (payload && payload.error_code) || fallback;
+  if (data.detail && typeof data.detail === 'object') {
+    return data.detail.message || data.detail.error_code || fallback;
+  }
+  return data.message || data.error_code || fallback;
 }
 
 async function downloadWithToken(url, filename) {

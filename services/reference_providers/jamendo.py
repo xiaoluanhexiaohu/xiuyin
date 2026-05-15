@@ -34,7 +34,7 @@ class JamendoProvider(ReferenceProvider):
     def _client_id(self) -> str:
         client_id = os.getenv("JAMENDO_CLIENT_ID")
         if not client_id:
-            raise ConfigMissingError("Jamendo API 未配置，请在 .env 中配置 JAMENDO_CLIENT_ID")
+            raise ConfigMissingError("JAMENDO_CLIENT_ID is not configured.")
         return client_id
 
     async def search(self, query: str, page: int = 1, page_size: int = 10) -> list[ReferenceSearchItem]:

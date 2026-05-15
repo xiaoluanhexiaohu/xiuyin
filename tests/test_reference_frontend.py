@@ -20,14 +20,3 @@ def test_reference_search_javascript_calls_only_compliant_apis():
     lowered = js.lower()
     for term in forbidden:
         assert term not in lowered
-
-
-def test_reference_search_fetch_omits_bearer_token():
-    js = Path("static/simple_upload.js").read_text(encoding="utf-8")
-    search_block = js[js.index("async function searchReferenceMusic"):js.index("function renderReferenceResults")]
-    assert "/api/v1/reference/search" in search_block
-    assert "Authorization" not in search_block
-    assert "CONFIG_MISSING" in js
-    assert "第三方音乐 API 未配置，请检查 .env 配置" in js
-    assert "REFERENCE_SEARCH_FAILED" in js
-    assert "音乐搜索失败，请稍后重试" in js

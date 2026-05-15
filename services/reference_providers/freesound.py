@@ -36,7 +36,7 @@ class FreesoundProvider(ReferenceProvider):
     def _api_key(self) -> str:
         key = os.getenv("FREESOUND_API_KEY")
         if not key:
-            raise ConfigMissingError("Freesound API 未配置，请在 .env 中配置 FREESOUND_API_KEY")
+            raise ConfigMissingError("FREESOUND_API_KEY is not configured.")
         return key
 
     def _oauth_token(self) -> str | None:

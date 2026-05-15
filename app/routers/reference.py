@@ -25,43 +25,25 @@ def _provider(source: str):
     return provider_cls()
 
 
-def _error_status(error_code: str) -> int:
-    """Map stable provider error codes to HTTP statuses."""
-
-    return 400 if error_code in {"CONFIG_MISSING", "REFERENCE_IMPORT_NOT_ALLOWED", "REFERENCE_AUDIO_UNAUTHORIZED"} else 502
-
-
-def _error_payload(exc: ReferenceProviderError) -> dict[str, str]:
-    """Return the public error shape consumed by the frontend."""
-
-    message = IMPORT_NOT_ALLOWED_MESSAGE if exc.error_code == "REFERENCE_IMPORT_NOT_ALLOWED" else exc.message
-    return {"error_code": exc.error_code, "message": message}
-
-
 def _http_error(exc: ReferenceProviderError) -> HTTPException:
-    return HTTPException(status_code=_error_status(exc.error_code), detail=_error_payload(exc))
-
-
-@router.options("/search")
-def reference_search_options() -> dict[str, str]:
-    """Allow unauthenticated CORS preflight checks for the public search endpoint."""
-
-    return {"status": "ok"}
+    status_code = 400 if exc.error_code in {"CONFIG_MISSING", "REFERENCE_IMPORT_NOT_ALLOWED", "REFERENCE_AUDIO_UNAUTHORIZED"} else 502
+    message = IMPORT_NOT_ALLOWED_MESSAGE if exc.error_code == "REFERENCE_IMPORT_NOT_ALLOWED" else exc.message
+    return HTTPException(status_code=status_code, detail={"error_code": exc.error_code, "message": message})
 
 
 @router.post("/search", response_model=ReferenceSearchResponse)
-async def search_reference(request: ReferenceSearchRequest) -> ReferenceSearchResponse | JSONResponse:
-    """Search a configured third-party source for normalized reference metadata.
+async def search_reference(
+    request: ReferenceSearchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ReferenceSearchResponse:
+    """Search a configured third-party source for normalized reference metadata."""
 
-    This endpoint is intentionally public: it returns third-party metadata only
-    and does not import, cache, or expose private user audio.
-    """
-
+    del current_user
     provider = _provider(request.source)
     try:
         items = await provider.search(request.query, request.page, request.page_size)
     except ReferenceProviderError as exc:
-        return JSONResponse(status_code=_error_status(exc.error_code), content=_error_payload(exc))
+        raise _http_error(exc) from exc
     return ReferenceSearchResponse(items=items)
 
 
