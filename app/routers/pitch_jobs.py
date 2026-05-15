@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.audio_registry import load_registered_audio
 from app.auth import get_current_user
 from app.schemas import PitchCorrectionJobCreateRequest, PitchCorrectionJobResponse
 from app.users import User, hash_user_sub
@@ -22,10 +23,17 @@ router = APIRouter(prefix="/api/v1/pitch-correction/jobs", tags=["pitch-correcti
 
 
 def _audio_path_for(owner_sub: str, audio_id: str) -> Path:
-    path = web_jobs_root() / hash_user_sub(owner_sub) / "audio" / audio_id / "normalized.wav"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail={"error_code": "AUDIO_NOT_FOUND", "audio_id": audio_id})
-    return path
+    """Resolve an owner-scoped upload/import audio id to a normalized WAV path."""
+
+    metadata = load_registered_audio(owner_sub, audio_id)
+    if metadata and metadata.get("normalized_path"):
+        registered_path = Path(str(metadata["normalized_path"]))
+        if registered_path.exists():
+            return registered_path
+    legacy_path = web_jobs_root() / hash_user_sub(owner_sub) / "audio" / audio_id / "normalized.wav"
+    if legacy_path.exists():
+        return legacy_path
+    raise HTTPException(status_code=404, detail={"error_code": "AUDIO_NOT_FOUND", "audio_id": audio_id})
 
 
 @router.post("", response_model=PitchCorrectionJobResponse)
