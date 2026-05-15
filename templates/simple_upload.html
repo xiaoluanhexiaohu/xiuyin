@@ -11,7 +11,28 @@
     <h1>一键修音</h1>
     <p class="hint">上传原唱和你的录音，系统会自动分析并修音，完成后自动下载结果压缩包。</p>
     <form id="uploadForm">
-      <label>原唱音频<input type="file" name="reference_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
+      <section id="referenceSearchPanel" class="reference-search-panel" aria-label="搜索原唱音乐">
+        <h2>搜索原唱音乐</h2>
+        <p class="hint">可搜索 Jamendo / Freesound 的可授权音频并导入；Spotify / YouTube 仅展示歌曲信息，不能后台导入音频。</p>
+        <div class="reference-search-controls">
+          <label>关键词
+            <input id="referenceSearchQuery" type="search" placeholder="输入歌曲名或歌手名" autocomplete="off" />
+          </label>
+          <label>来源
+            <select id="referenceSearchSource">
+              <option value="jamendo">Jamendo</option>
+              <option value="freesound">Freesound</option>
+              <option value="spotify">Spotify</option>
+              <option value="youtube">YouTube</option>
+            </select>
+          </label>
+          <button id="referenceSearchButton" type="button">搜索</button>
+        </div>
+        <p id="referenceSearchStatus" class="hint">请输入歌曲名或歌手名后搜索。</p>
+        <div id="selectedReferenceAudio" class="selected-reference" hidden></div>
+        <ul id="referenceSearchResults" class="reference-results" aria-live="polite"></ul>
+      </section>
+      <label>原唱音频<input id="referenceAudioInput" type="file" name="reference_audio" accept=".wav,.mp3,.m4a,.flac,audio/*" required /></label>
       <label>我的录音<input id="userAudioInput" type="file" name="user_audio" accept=".wav,.mp3,.m4a,.flac,.webm,.mp4,audio/*" required /></label>
       <section id="recorderPanel" class="recorder-panel" aria-label="浏览器录音面板">
         <h2>直接录音</h2>

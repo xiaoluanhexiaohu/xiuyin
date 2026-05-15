@@ -15,6 +15,7 @@ dependencies = [
   "jinja2",
   "redis",
   "rq",
+  "httpx",
 ]
 
 [project.optional-dependencies]
