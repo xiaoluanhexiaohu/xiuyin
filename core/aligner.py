@@ -45,6 +45,8 @@ def align_features(reference_features: AudioFeatures, user_features: AudioFeatur
     if ref.shape[0] != usr.shape[0]:
         raise ValueError("Reference and user feature matrices must have the same feature dimension")
 
+    ref = _avoid_zero_cosine_rows(ref)
+    usr = _avoid_zero_cosine_rows(usr)
     cost, wp = librosa.sequence.dtw(X=ref, Y=usr, metric="cosine")
     path = [(int(r), int(u)) for r, u in wp[::-1]]
     mapping: list[int | None] = [None] * usr.shape[1]
@@ -167,3 +169,15 @@ def align_partial_features(reference_features: AudioFeatures, user_features: Aud
     result.matched_reference_start_time = 0.0
     result.matched_reference_end_time = reference_features.times[-1] if reference_features.times else 0.0
     return result
+
+
+def _avoid_zero_cosine_rows(matrix: np.ndarray) -> np.ndarray:
+    """Avoid NaN cosine distances for all-zero feature frames."""
+
+    out = np.nan_to_num(np.asarray(matrix, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0).copy()
+    # librosa/scipy compute cosine distance on time-frame rows after swapping
+    # axes, so columns here must not be all-zero.
+    zero_cols = np.linalg.norm(out, axis=0) <= 1e-12
+    if np.any(zero_cols):
+        out[0, zero_cols] = 1e-6
+    return out

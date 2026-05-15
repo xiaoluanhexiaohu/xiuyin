@@ -9,6 +9,110 @@ const warningText = document.getElementById('warningText');
 const links = document.getElementById('downloadLinks');
 const startButton = document.getElementById('startButton');
 
+const userAudioInput = document.getElementById('userAudioInput');
+const recordStart = document.getElementById('recordStart');
+const recordStop = document.getElementById('recordStop');
+const recordReset = document.getElementById('recordReset');
+const recordPreview = document.getElementById('recordPreview');
+const recordStatus = document.getElementById('recordStatus');
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordStartedAt = 0;
+let recordTimer = null;
+const maxRecordingMs = 10 * 60 * 1000;
+const maxRecordingBytes = 20 * 1024 * 1024;
+
+if (recordStart) {
+  recordStart.addEventListener('click', startRecording);
+  recordStop.addEventListener('click', stopRecording);
+  recordReset.addEventListener('click', resetRecording);
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    recordStatus.textContent = '当前浏览器不支持直接录音，请上传音频文件。';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = pickRecordingMimeType();
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recordedChunks = [];
+    recordStartedAt = Date.now();
+    mediaRecorder.addEventListener('dataavailable', (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    });
+    mediaRecorder.addEventListener('stop', () => finalizeRecording(stream, mimeType || 'audio/webm'));
+    mediaRecorder.start(1000);
+    recordStart.disabled = true;
+    recordStop.disabled = false;
+    recordReset.disabled = true;
+    recordStatus.textContent = '正在录音…';
+    recordTimer = setTimeout(() => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        stopRecording();
+      }
+    }, maxRecordingMs);
+  } catch (err) {
+    const messages = {
+      NotAllowedError: '麦克风权限被拒绝，请允许浏览器使用麦克风。',
+      NotFoundError: '未找到可用麦克风，请连接输入设备。',
+      OverconstrainedError: '当前麦克风不满足录音约束，请更换输入设备。'
+    };
+    recordStatus.textContent = messages[err.name] || `录音启动失败：${err.message}`;
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
+}
+
+function resetRecording() {
+  recordedChunks = [];
+  if (recordPreview.src) {
+    URL.revokeObjectURL(recordPreview.src);
+  }
+  recordPreview.hidden = true;
+  recordPreview.removeAttribute('src');
+  userAudioInput.value = '';
+  recordStart.disabled = false;
+  recordStop.disabled = true;
+  recordReset.disabled = true;
+  recordStatus.textContent = '已重置，可重新录音。';
+}
+
+function finalizeRecording(stream, mimeType) {
+  clearTimeout(recordTimer);
+  stream.getTracks().forEach((track) => track.stop());
+  const blob = new Blob(recordedChunks, { type: mimeType });
+  if (blob.size > maxRecordingBytes) {
+    recordStatus.textContent = '录音超过 20MB，请缩短时长后重录。';
+    resetRecording();
+    return;
+  }
+  const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+  const file = new File([blob], `recording.${extension}`, { type: mimeType });
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  userAudioInput.files = transfer.files;
+  recordPreview.src = URL.createObjectURL(blob);
+  recordPreview.hidden = false;
+  recordStart.disabled = false;
+  recordStop.disabled = true;
+  recordReset.disabled = false;
+  const seconds = Math.round((Date.now() - recordStartedAt) / 1000);
+  recordStatus.textContent = `录音完成（约 ${seconds} 秒），已填入“我的录音”。`;
+}
+
+function pickRecordingMimeType() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+  return candidates.find((item) => MediaRecorder.isTypeSupported(item)) || '';
+}
+
 const stageText = {
   upload: '正在上传',
   normalize: '正在转换音频格式',

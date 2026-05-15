@@ -129,7 +129,7 @@ def is_expired(status: dict[str, Any]) -> bool:
     """Return True when a completed job is past its download expiry."""
 
     expires_at = status.get("expires_at")
-    if status.get("status") not in {"completed", "expired"} or not expires_at:
+    if status.get("status") not in {"completed", "succeeded", "expired"} or not expires_at:
         return False
     return datetime.fromisoformat(expires_at) <= utc_now()
 

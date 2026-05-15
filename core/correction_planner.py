@@ -92,7 +92,9 @@ def create_correction_plan(
             clipped_count += 1
         shift_cents[i] = clipped_shift
         target_log = trend[i] + clipped_shift / 1200.0 + residual[i] * vibrato
-        if np.isfinite(target_log):
+        if strength == 0.0:
+            target[i] = float(user_f0[i])
+        elif np.isfinite(target_log):
             target[i] = float(2.0**target_log)
         else:
             target[i] = user_f0[i]
