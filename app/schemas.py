@@ -129,10 +129,17 @@ class AudioUploadResponse(BaseModel):
 class ReferenceSearchRequest(BaseModel):
     """Third-party reference search request."""
 
-    query: str = Field(min_length=1)
     source: ReferenceSource
+    query: str = Field(min_length=1)
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=10, ge=1, le=50)
+
+
+class ReferenceImportRequest(BaseModel):
+    """Third-party reference import request."""
+
+    source: ReferenceSource
+    track_id: str = Field(min_length=1)
 
 
 class ReferenceSearchItem(BaseModel):
@@ -142,22 +149,39 @@ class ReferenceSearchItem(BaseModel):
     track_id: str
     title: str
     artist: str | None = None
+    album: str | None = None
     duration_sec: float | None = None
     preview_url: str | None = None
     stream_url: str | None = None
     download_url: str | None = None
+    cover_url: str | None = None
+    external_url: str | None = None
     license: str | None = None
     can_download: bool = False
-    external_url: str | None = None
     authorization_notes: str = ""
 
 
 class ReferenceSearchResponse(BaseModel):
     """Search response."""
 
-    source: ReferenceSource
-    results: list[ReferenceSearchItem]
-    warnings: list[str] = Field(default_factory=list)
+    items: list[ReferenceSearchItem]
+
+
+class ReferenceImportResponse(BaseModel):
+    """Imported reference audio response."""
+
+    source: str
+    track_id: str
+    audio_id: str
+    title: str
+    artist: str | None = None
+    original_url: str | None = None
+    local_path: str
+    normalized_path: str
+    sample_rate: int
+    duration_sec: float
+    license: str | None = None
+    authorization_notes: str = ""
 
 
 class PitchCorrectionOptions(BaseModel):

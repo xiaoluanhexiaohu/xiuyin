@@ -76,17 +76,90 @@ uvicorn app.main:app --reload
 
 前端录音接入建议：使用 `getUserMedia + MediaRecorder`，优先 `audio/webm;codecs=opus`，其次 `audio/mp4`；处理 `NotAllowedError`、`NotFoundError`、`OverconstrainedError`；限制单次录音 10 分钟或 20MB；停止后把 Blob 作为 `source=recording&kind=user_vocal` 上传。
 
-## API v1：第三方参考音频搜索
+## API v1：参考音乐搜索与合规导入
 
-`POST /api/v1/reference/search`：
+### 第三方 API 配置
+
+在 `.env` 中配置以下变量，所有第三方密钥只通过环境变量读取，不能硬编码到代码：
+
+```bash
+JAMENDO_CLIENT_ID=
+
+FREESOUND_API_KEY=
+FREESOUND_OAUTH_TOKEN=
+
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+
+YOUTUBE_API_KEY=
+
+REFERENCE_RAW_DIR=storage/reference/raw
+REFERENCE_NORMALIZED_DIR=storage/reference/normalized
+UPLOAD_RAW_DIR=storage/uploads/raw
+UPLOAD_NORMALIZED_DIR=storage/uploads/normalized
+MAX_AUDIO_SIZE_MB=50
+TARGET_SAMPLE_RATE=48000
+TARGET_CHANNELS=1
+```
+
+### 搜索音乐
+
+`POST /api/v1/reference/search`，Bearer JWT 必填：
 
 ```json
 {"source":"jamendo","query":"acoustic vocal","page":1,"page_size":10}
 ```
 
-支持 `jamendo`、`freesound`、`spotify`、`youtube`。返回字段包括 `source`、`track_id`、`title`、`artist`、`duration_sec`、`preview_url`、`stream_url`、`download_url`、`license`、`can_download`、`external_url`、`authorization_notes`。
+`source` 支持 `jamendo`、`freesound`、`spotify`、`youtube`。响应统一使用 `items` 字段，每个结果包含 `source`、`track_id`、`title`、`artist`、`album`、`duration_sec`、`preview_url`、`stream_url`、`download_url`、`cover_url`、`external_url`、`license`、`can_download`、`authorization_notes`。
 
-合规边界：Spotify / YouTube 只做搜索元数据展示和跳转，不做后台音频抓取、下载或缓存；Jamendo / Freesound 导入必须遵守对应授权和条款。
+### 可以后台导入的平台
+
+- **Jamendo**：当 API 返回 `audiodownload` 且有授权信息时，`can_download=true`，可按授权导入；导入前仍应向用户展示 license。
+- **Freesound**：没有 `FREESOUND_OAUTH_TOKEN` 时只导入 preview，并在 `authorization_notes` 标明“仅导入 preview，原始文件下载需要 OAuth2”；配置 OAuth2 token 后可使用官方原始文件下载端点。
+
+导入接口：`POST /api/v1/reference/import`，Bearer JWT 必填：
+
+```json
+{"source":"jamendo","track_id":"1848357"}
+```
+
+成功后返回 `audio_id`、`local_path`、`normalized_path`、`duration_sec`、`sample_rate`、`license`、`authorization_notes`，并把该 `audio_id` 注册为当前用户可用于 `/api/v1/pitch-correction/jobs` 的 `reference_audio_id`。
+
+### 只能展示的平台
+
+- **Spotify**：只使用 Client Credentials 做 track 元数据搜索，展示歌曲名、歌手、专辑、封面、外部链接和 API 返回的 preview（如有）。`can_download=false`，`download_url=null`。
+- **YouTube**：只使用 YouTube Data API `search.list` 展示视频标题、频道、封面和外部链接。`can_download=false`，`download_url=null`。
+
+Spotify 和 YouTube 的 `/api/v1/reference/import` 一律返回 `REFERENCE_IMPORT_NOT_ALLOWED`。本项目不包含 YouTube 下载、`yt-dlp`、`pytube`、`youtube-dl`、网页爬虫下载或 Spotify 音频抓取逻辑。若用户要把商业歌曲作为参考音频，应由用户自行确认授权后通过本地上传提供文件。
+
+### 本地上传作为商业歌曲参考音频入口
+
+`POST /api/v1/audio/upload`，Bearer JWT 必填，`multipart/form-data`：
+
+```text
+file=<binary>
+kind=reference_audio|user_vocal
+source=upload
+```
+
+支持 `wav`、`mp3`、`m4a`、`webm`、`mp4`、`flac`。后端保存原始文件到 `UPLOAD_RAW_DIR`，统一转码为 WAV 保存到 `UPLOAD_NORMALIZED_DIR`，返回 `audio_id`、`duration_sec`、`sample_rate`、`channels`、`normalized_path`。
+
+### 接入一键修音任务
+
+参考音频可以来自三种方式：
+
+1. 本地上传 `kind=reference_audio` 返回的 `audio_id`。
+2. Jamendo/Freesound 合规导入返回的 `audio_id`。
+3. Spotify/YouTube 只展示信息；如需作为参考音频，用户必须自行上传合法音频文件。
+
+然后调用 `POST /api/v1/pitch-correction/jobs`，把该值作为 `reference_audio_id`，并传入用户录音上传得到的 `user_audio_id`。
+
+### 合规声明
+
+- 不后台抓取、下载、缓存 Spotify/YouTube 原曲音频。
+- 不把第三方音频或用户上传音频自动加入训练集。
+- 用户上传的商业歌曲文件由用户自行保证使用授权。
+- 低置信度、无声、气声、齿音等区域不会被强制修正。
 
 ## API v1：创建一键修音任务
 
